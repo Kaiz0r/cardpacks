@@ -24,7 +24,7 @@ card = f.pull()
 ```
 
 Also work-in-progress is a little system of making text-based card games.
-```
+```py
 # To try the default Blackjack game.
 import cardpacks
 
@@ -39,7 +39,7 @@ game.loop() #starts a CLI loop to play
 ```
 
 It uses a modular system, so the game state can be modified at will.
-```
+```py
 import cardpacks
 
 def send(message):
