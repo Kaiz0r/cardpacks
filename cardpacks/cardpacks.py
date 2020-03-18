@@ -16,7 +16,7 @@ class CardGame:
 
     def defExitHook(self):
         self.message("Game over.")
-        self.players = []
+        #self.players = []
         self.svar('playing', False)
         
     def svar(self, key, val):
@@ -73,11 +73,11 @@ class CardGame:
     def addCommand(self, name, fn):
         self.commands[name] = fn
 
-    def loop(self):
+    def loop(self, name):
         self.addHook('_exit', lambda: quit())
         
         while True:
-            self.execute(input("> "))
+            self.execute(name, input("> "))
             self.clr()
 
     def showHand(self, index):
@@ -94,7 +94,17 @@ class CardGame:
                 i += card.value
         return i
     
-    def execute(self, command):
+    def execute(self, name, command):
+        p = False
+        for player in self.players:
+            if player['name'] == name:
+                p = True
+                break
+
+        if not p:
+            self.message("You aren't playing this session.")
+            return
+        
         args = []
         if len(command.split()) > 1:
             args = command.split()[1:]
@@ -121,9 +131,10 @@ class CardGame:
             return
         
         if self.commands.get(command):
-            self.hook('turn')
-            return self.commands[command](*args)
-        
+            self.hook('pre_turn')
+            resp = self.commands[command](*args)
+            self.hook('post_turn')
+            return resp
         
     def addHook(self, name, fn):
         self.hooks[name] = fn
@@ -145,44 +156,63 @@ class CardGame:
 class CGBlackjack(CardGame):
     def __init__(self):
         super().__init__()
-        self.addHook('_restart', self._initBlackjack)
-        
+        self.addHook('_restart', lambda: self._initBlackjack(self.player(0)['name']))
+        self.addHook('pre_turn', self.turnui_pre)
+        self.addHook('post_turn', self.turnui_post)
         self.addCommand('hit', self.hit)
         self.addCommand('stand', self.stand)
         self.addCommand('quit', lambda: self.hook('exit'))
         self.addCommand('restart', lambda: self.hook('_restart'))
-
+        
+    def turnui_pre(self):
+        self.message(f"=== {self.player(0)['name']} ===")
+        
+    def turnui_post(self):
+        if not self.gvar("playing") and not self.gvar("show_endscreen"):
+            self.message(" `new` = new game ")
+            self.message(" `q` = exit")
+        else:
+            self.message(" hit | stand | double | quit ")
+        self.message(f"==={'='*(len(self.player(0)['name'])+2)}===")
+        
     def checkState(self, finalize=False):
         p = self.getHandTotal(0)
         h = self.getHandTotal(1)
                 
         if p > 21:
             self.message("You went bust!")
-            self.hook(f'player_1_win')
+            
             self.hook('exit')
+            self.hook(f'player_1_win')
             
         elif h > 21:
             self.message("House went bust!")
-            self.hook(f'player_0_win')
+            
             self.hook('exit')
+            self.hook(f'player_0_win')
             
         elif h > 21 and p > 21:
             self.message("Both went bust!!?")
+            
             self.hook('exit')
-
+            self.hook(f'no_player_win')
+            
         elif h > p and finalize:
             self.message("House is closer to 21, house wins.")
-            self.hook(f'player_1_win')
+            
             self.hook('exit')
+            self.hook(f'player_1_win')
             
         elif h < p and finalize:
             self.message("Player is closer to 21, Player wins.")
-            self.hook(f'player_0_win')
+            
             self.hook('exit')
+            self.hook(f'player_0_win')
             
         elif h == p and finalize:
             self.message("It's a draw.")
             self.hook('exit')
+            self.hook(f'no_player_win')
             
     def hit(self, *args, **kargs):
         new = self.deck.draw()
@@ -243,16 +273,26 @@ class CGBlackjack(CardGame):
     def _initBlackjack(self, name="Player"):
         self.svar('playing', True)
         self.svar('mode', 0)
+        #self.svar('player_name', name)
         self.message("Blackjack started!")
         self.deck = Deck(jokers=False)
         self.deck.shuffle()
+        self.players = []
         self.addPlayer(name=name, maxhand=2)
         self.addPlayer(name="House", cpu=True, maxhand=2)
         self.fillAllHands()
         self.message(f"[{name}] Your hand is... {self.showHand(0)} - {self.getHandTotal(0)}")
         self.message(f"House holds... {self.showHand(1)}")
         
-class TarotNouveauCard:
+
+class CardObject:
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return f"{self.name}"
+
+class TarotNouveauCard(CardObject):
     def __init__(self, number, icon, theme, group):
         self.number = number
         self.icon = icon
@@ -262,7 +302,7 @@ class TarotNouveauCard:
     def __repr__(self):
         return f"{self.icon} #{self.number} {self.group}, {self.theme}"
 
-class MajorArcanaTarotCard:
+class MajorArcanaTarotCard(CardObject):
     def __init__(self, number):
         self.number = number
         self.faces = [
@@ -294,7 +334,7 @@ class MajorArcanaTarotCard:
     def __repr__(self):
         return f"#{self.number} {self.name}"
 
-class MinorArcanaTarotCard:
+class MinorArcanaTarotCard(CardObject):
     def __init__(self, suit, value):
         self.suit = suit
         self.value = value
@@ -318,8 +358,42 @@ class MinorArcanaTarotCard:
 
     def __repr__(self):
         return f"{self.name} of {self.suit}"
+    
+class DeusExCard(CardObject):
+    def __init__(self, key):
+        rarities = {
+            5: 'legendary',
+            4: 'epic',
+            3: 'rare',
+            2: 'uncommon',
+            1: 'common'
+        }
+        template = {
+            'jcd':      {'name': 'JC Denton',        'atk': 5, 'def': 3, 'id': 0, 'rarity': 5},
+            'paul':     {'name': 'Paul Denton',      'atk': 4, 'def': 4, 'id': 1, 'rarity': 5},
+            'jock':     {'name': 'Jock',             'atk': 5, 'def': 2, 'id': 2, 'rarity': 4},
+            'shea':     {'name': 'Jordan Shea',      'atk': 5, 'def': 2, 'id': 3, 'rarity': 5},
+            'reyes':    {'name': 'Jaime Reyes',      'atk': 5, 'def': 0, 'id': 4, 'rarity': 1},
+            'jacobson': {'name': 'Alex Jacobson',    'atk': 5, 'def': 0, 'id': 5, 'rarity': 1},
+            'joseph':   {'name': 'Joseph Manderley', 'atk': 5, 'def': 0, 'id': 6, 'rarity': 5},
+            'hermann':  {'name': 'Gunther Hermann',  'atk': 5, 'def': 0, 'id': 7, 'rarity': 4},
+            'navarre':  {'name': 'Anna Navarre',     'atk': 5, 'def': 0, 'id': 8, 'rarity': 4},
+            'simons':   {'name': 'Walton Simons',    'atk': 5, 'def': 0, 'id': 9, 'rarity': 5},
+            'unatco':   {'name': 'UNATCO Troop',     'atk': 5, 'def': 0, 'id': 10, 'rarity': 1},
+            'nsf':      {'name': 'NSF Terrorist',    'atk': 5, 'def': 0, 'id': 11, 'rarity': 1},
+            'mj12':     {'name': 'MJ12 Troop',       'atk': 5, 'def': 0, 'id': 11, 'rarity': 1},
+        }
+        self.data = template.get(key, template['unatco'])
+        self.cid = self.data['id']
+        self.catk = self.data['atk']
+        self.cdef = self.data['def']
+        self.name = self.data['name']
+        self.rarity = rarities.get(self.data['rarity'])
 
-class PlayingCard:
+    def __repr__(self):
+        return f"{self.name} ({self.catk}/{self.cdef})"
+    
+class PlayingCard(CardObject):
     def __init__(self, *, suit=None, icon=None, value=None):
         self.suit = suit
         self.icon = icon
@@ -345,6 +419,7 @@ class PlayingCard:
             return f"{self.name} of {self.icon} {self.suit}s"
         else:
             return self.name
+
 
 class TarotArcanaPack:
     @staticmethod
