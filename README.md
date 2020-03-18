@@ -30,12 +30,23 @@ import cardpacks
 
 game = cardpacks.CGBlackjack() #create the game state
 
-game.create() #starts a new game
+game.create("Kai") #starts a new game, blackjack takes an argument for the players name
+#this is used in the text output, and also as a check for interfaces
+#for example, if this is implemented in a discord bot
+#it can be used as a way to know which discord user the game belongs to
 
 print(game.players) #our blackjack example has 2 players
 
 game.clr() #clr prints the message buffer. in this case, it'll show the "startup" messages
-game.loop() #starts a CLI loop to play
+game.loop("Kai") #starts a CLI loop to play, argument is the name of the player in sent commands
+
+# to implement custom interfaces, instead of using loop()
+# you would run
+
+game.execute("Kai", "hit")
+# which sends a "hit" command to the game state under the name of Kai
+# All the games in this system run on a command system, which can be arbitrarily added by the state
+# And after every execute, you can run .clr() to grab the message output
 ```
 
 It uses a modular system, so the game state can be modified at will.
@@ -59,8 +70,10 @@ Runs when the `new` command is issued, should point to a function that re-initia
 _exit : Handles what happens when the `q` command is issued.
 In the CLI loop, it runs quit(), but if you're plugging it in to another interface, maybe do something else.
 exit : Handles what happens when the "game state" ends, e.i. when someone wins or loses.
-turn : Runs before every command is run.
+pre_turn : Runs before every command is run.
+post_turn : Runs after every command is run.
 player_0_wins : Runs when a player wins, number should be whichever player ID wins.
+no_player_wins : Runs in the case of a draw
 
 But, hooks are arbitrary keys, and you can add your own names with
 game.addHook('cheat', callable_function)
