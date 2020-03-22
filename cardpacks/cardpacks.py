@@ -22,8 +22,8 @@ class CardGame:
     def svar(self, key, val):
         self.vars[key.lower()] = val
 
-    def gvar(self, key):
-        return self.vars.get(key.lower())
+    def gvar(self, key, default = None):
+        return self.vars.get(key.lower(), default)
 
     def player(self, index):
         try:
@@ -66,6 +66,14 @@ class CardGame:
         p.update(new)
         self.players.append(p.copy())
 
+    def removePlayer(self, name):
+        for player in copy.copy(self.players):
+            if player['name'] == name:
+                self.players.remove(player)
+                print(f"Removed {player}")
+                print(self.players)
+                break
+            
     def message(self, text):
         self.messageBuffer.append(text)
         self.hook('message', text=text)
@@ -93,8 +101,8 @@ class CardGame:
             else:
                 i += card.value
         return i
-    
-    def execute(self, name, command):
+
+    def preExecCheck(self, name, command):
         p = False
         for player in self.players:
             if player['name'] == name:
@@ -103,6 +111,13 @@ class CardGame:
 
         if not p:
             self.message("You aren't playing this session.")
+            return True
+        
+    def execute(self, name, command):
+        self.send(name, command)
+        
+    def send(self, name, command):
+        if self.preExecCheck(name, command):
             return
         
         args = []
@@ -115,7 +130,6 @@ class CardGame:
             return
         
         if command == "new" and not self.gvar('playing'):
-            print(args)
             if len(args) == 1:
                 self.hook('_restart', name=args[0])
             else:
@@ -131,9 +145,9 @@ class CardGame:
             return
         
         if self.commands.get(command):
-            self.hook('pre_turn')
-            resp = self.commands[command](*args)
-            self.hook('post_turn')
+            self.hook('pre_turn', player=name)
+            resp = self.commands[command](*args, player=name)
+            self.hook('post_turn', player=name)
             return resp
         
     def addHook(self, name, fn):
@@ -152,7 +166,15 @@ class CardGame:
         if self.hooks.get(hook_name):
             self.hooks[hook_name](*args, **kargs)
 
-
+    def qhook(self, *args, **kargs):
+        self.hook('_exit')
+        
+    def exithook(self, *args, **kargs):
+        self.hook('exit')
+        
+    def restarthook(self, *args, **kargs):
+        self.hook('_restart')
+        
 class CGBlackjack(CardGame):
     def __init__(self):
         super().__init__()
@@ -272,8 +294,6 @@ class CGBlackjack(CardGame):
 
     def _initBlackjack(self, name="Player"):
         self.svar('playing', True)
-        self.svar('mode', 0)
-        #self.svar('player_name', name)
         self.message("Blackjack started!")
         self.deck = Deck(jokers=False)
         self.deck.shuffle()
@@ -285,6 +305,145 @@ class CGBlackjack(CardGame):
         self.message(f"House holds... {self.showHand(1)}")
         
 
+class CGPoker(CardGame):
+    def __init__(self):
+        super().__init__()
+        self.addHook('_restart', lambda: self._initg(self.gvar('owner_name')))
+        self.addHook('pre_turn', self.turnui_pre)
+        self.addHook('post_turn', self.turnui_post)
+        self.addHook('sit_player', self.sit_player)
+        self.addHook('remove_player', self.remove_player)
+        self.addHook('begin_room_game', self.start_game)
+        self.addHook('no_humans_remain', self.no_humans_remain)
+        
+        self.addCommand('start', self.start_game)
+        self.addCommand('players', self.show_players)
+        self.addCommand('leave', self.remove_player)
+        self.addCommand('quit', self.exithook)
+
+        self.addCommand('call', self.pcall)
+        self.addCommand('raise', self.praise)
+        self.addCommand('fold', self.pfold)
+
+    def pcall(self, *args, **kargs):
+        p = kargs['player']
+        folded = self.gvar('folded', [])
+        if self.gvar('mode') != 1:
+            return self.message("Can only call in the betting phase.")
+        if p in folded:
+            return self.message("You are already out.")
+        
+    def praise(self, *args, **kargs):
+        p = kargs['player']
+        folded = self.gvar('folded', [])
+        if self.gvar('mode') != 1:
+            return self.message("Can only call in the betting phase.")
+        if p in folded:
+            return self.message("You are already out.")
+        
+    def pfold(self, *args, **kargs):
+         p = kargs['player']
+         folded = self.gvar('folded', [])
+         
+         if p in folded:
+             return self.message("You are already out.")
+         else:
+             folded.append(p)
+             self.svar('folded', folded)
+             self.message(f"{p} is out.")
+             
+    def no_humans_remain(self, *args, **kargs):
+        self.hook('_exit')
+        
+    def start_game(self, *args, **kargs):
+        if self.gvar('mode') == 1:
+            self.message("Already running.")
+            return
+        
+        if kargs['player'] == self.gvar('owner_name'):
+            self.message("Game begins.")
+            while len(self.players) < self.gvar('max_players'):
+                self.message("Empty seat was filled by a computer.")
+                self.addPlayer(name='Computer', cpu=True)
+            self.mode(1)
+            
+        else:
+            self.message(f"Only {self.gvar('owner_name')} can start the session.")
+        
+    def show_players(self, *args, **kargs):
+        i = 0
+        for player in self.players:
+            if player['cpu']:
+                self.message(f"({i})[CPU] {player['name']}")
+            else:
+                self.message(f"({i}) {player['name']}")
+            i += 1
+            
+    def remove_player(self, *args, **kargs):
+        self.removePlayer(kargs['player'])
+        
+        for player in self.players:
+            if not player['cpu']:
+               return
+           
+        self.message("No human players remaining, exiting.")
+        self.hook('no_humans_remain')
+        
+    def sit_player(self, *args, **kargs):
+        if self.gvar('mode') == 0:
+            self.addPlayer(name=kargs['name'])
+            self.message(f"{kargs['name']} sits at the table.")
+        else:
+            self.message(f"{kargs['name']} tried to sit in, but a game is already running.")
+            
+    def mode(self, v):
+        if type(v) == int:
+            self.svar('mode', v)
+        else:
+            if v == "lobby":
+                self.svar('mode', 0)
+            if v == "betting":
+                self.svar('mode', 1)
+            if v == "playing":
+                self.svar('mode', 2)
+
+    def gmode(self):
+        if self.gvar('mode') == 0:
+            return "lobby"
+        elif self.gvar('mode') == 1:
+            return "betting"
+        elif self.gvar('mode') == 1:
+            return "playing"
+        
+    def turnui_pre(self, *args, **kargs):
+        self.message(f"=== POKER ===")
+        
+    def turnui_post(self, *args, **kargs):
+        if not self.gvar("playing") and not self.gvar("show_endscreen"):
+            self.message(" `new` = new game ")
+            self.message(" `q` = exit")
+        else:
+            self.message("  [{self.}]")
+            
+        self.message(f"==={'='*(len('poker'))}===")
+
+    def create(self, name="Player"):
+        self._initHoldem(name)
+        self.hook("init", name=name)
+
+    def _initg(self, name="Player"):
+        self.svar('playing', True)
+        self.svar('mode', 0)
+        self.svar('max_players', 5)
+        self.svar('owner_name', name)
+        self.message(f"{name}'s Poker room created.")
+        self.deck = Deck(jokers=False)
+        self.deck.shuffle()
+        self.players = []
+        self.fillAllHands()
+
+        
+        
 class CardObject:
     def __init__(self, name):
         self.name = name
