@@ -1,3 +1,5 @@
+![Upload Python Package](https://github.com/Kaiz0r/cardpacks/workflows/Upload%20Python%20Package/badge.svg)
+
 # cardpacks
 
 ```py
