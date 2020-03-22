@@ -2,13 +2,13 @@ from distutils.core import setup
 setup(
   name = 'cardpacks',
   packages = ['cardpacks'],
-  version = '19.12.20',
+  version = '20.03.22',
   license='gpl-3.0',
   description = 'A collection of playing card classes..',
   author = 'Kaiser',
   author_email = 'technomancer@gmx.com',
   url = 'https://github.com/Kaiz0r/cardpacks',
-  download_url = 'https://github.com/Kaiz0r/cardpacks/archive/19.12.20.tar.gz',
+  download_url = 'https://github.com/Kaiz0r/cardpacks/archive/20.03.22.tar.gz',
   keywords = ['cards', 'packs', 'playing', 'tarot'],
   classifiers=[
     # How mature is this project? Common values are
